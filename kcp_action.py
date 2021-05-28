@@ -1,7 +1,10 @@
 
 import pcbnew
 import os
+import math
 from .json_import.parse_json import *
+import numpy as np
+#from .kcp_utils import *
 import pathlib
 import time
 
@@ -30,7 +33,7 @@ class KCPAction(pcbnew.ActionPlugin):
 
         config_file = os.path.join(os.path.dirname(__file__), 'example/ergochoc.json')
 
-        pcb = pcbnew.GetBoard()
+        self.pcb = pcbnew.GetBoard()
         test = load(config_file)
         keys = test.get_key_locations()
         key_spacing = 19.05
@@ -40,19 +43,54 @@ class KCPAction(pcbnew.ActionPlugin):
         #modules = pcb.board.GetModules()
 
         for k in range(len(keys)):
-            x, y, rotation, name = keys[k]
+            x, y, rotation, name, profile = keys[k]
             x = key_spacing * x + x_bezel
             y = key_spacing * y - y_bezel
+            row, col = str(profile).replace(".", ",").split(',')
+            print(row, col)
+            id = int(row)*100 + int(col)
 
             try:
-                key = pcb.FindFootprintByReference("SW{}".format(k+1))
-                key.SetPosition(pcbnew.wxPointMM(x, -y))
-                key.SetOrientationDegrees(-rotation)
-                pcbnew.Refresh()
-                #time.sleep(0.5)
+                # place switch
+                self.place_component(ref="SW{}".format(id), x=x, y=-y, angle=-rotation)
+
+                # place diode
+                xd, yd = self.rotate(origin=(0, 0), point=(0, -8.5), angle=-rotation)
+                self.place_component(ref="D{}".format(id), x=x+xd, y=-y-yd, angle=-rotation)
+
+                # place led
+                xd, yd = self.rotate(origin=(0, 0), point=(0, 5), angle=-rotation)
+                self.place_component(ref="LED{}".format(id), x=x + xd, y=-y - yd, angle=-rotation)
             except Exception:
                 pass
 
+    def place_component(self, ref: str, x: float, y: float, angle: float) -> None:
+        """
+        find and place a footprint to a given location and rotate it.
+
+        :param ref: reference of the footprint
+        :param x: x-coordinate
+        :param y: y-coordinate
+        :param angle: rotation angle in degrees
+        """
+        key = self.pcb.FindFootprintByReference(ref)
+        key.SetPosition(pcbnew.wxPointMM(x, y))
+        key.SetOrientationDegrees(angle)
+        pcbnew.Refresh()
+
+    def rotate(self, origin, point, angle):
+        """
+        Rotate a point counterclockwise by a given angle around a given origin.
+
+        The angle should be given in radians.
+        """
+        ox, oy = origin
+        px, py = point
+        angle = angle/180*np.pi
+
+        qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
+        qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+        return qx, qy
 
         # Load the board
         #pcb = pcbnew.LoadBoard("take2.kicad_pcb")
